@@ -1,0 +1,60 @@
+units           real
+boundary        p p f
+atom_style      full
+read_data       relaxation.data
+neighbor        2.0 bin
+change_box      all z final 0 120 units box
+
+#region and group set
+region          rfixedZ1 block INF INF INF INF 0 5
+group           fixedZ1 region rfixedZ1         
+group           dynamic subtract all fixedZ1
+
+#3 Variables
+variable        temperature equal 300
+variable        seed equal 1024
+variable        tstep equal 0.1
+variable        tdamp   equal 1000
+compute         fixedTemp1 fixedZ1 temp
+compute         dynamicTemp dynamic temp
+compute         AF dynamic stress/atom NULL
+compute         Az dynamic displace/atom 
+#comm_style      tiled
+#fix             fixbalance all balance 1000 1.2 rcb
+
+#potential
+pair_style      reax/c NULL checkqeq yes safezone 1.6  mincap 100 
+pair_coeff      * * CuBTC.ff C Cu H O
+neigh_modify    every 1 delay 0 check yes 
+fix             10 all qeq/reax 1 0.0 10.0 1.0e-6 reax/c
+thermo_modify   lost ignore flush yes
+
+#6 Loading
+reset_timestep  0
+thermo          1000
+thermo_style    custom step temp c_fixedTemp1 c_dynamicTemp etotal lx ly lz pxx pyy pzz
+timestep        ${tstep}
+velocity        dynamic create ${temperature} ${seed} rot yes dist gaussian
+velocity        fixedZ1 set 0 0 0 units box
+fix             1 fixedZ1 setforce 0 0 0
+fix             2 dynamic nvt temp ${temperature} ${temperature} ${tdamp}
+dump            1 all custom 1000 dump.lammpstrj id type x y z c_AF[3] c_Az[3]
+
+variable        rate equal  0.0003 #unit in angstrom per Femtosecond (A/fs)   
+variable        zmove equal "115 - v_rate*elaplong*dt" 
+thermo_style    custom step temp c_fixedTemp1 c_dynamicTemp etotal lx ly lz pxx pyy pzz v_zmove
+fix             3 all indent 10.0 sphere 0 0 v_zmove 30 units box #
+fix             4 all ave/time 1 100 100 f_3 f_3[1] f_3[2] f_3[3] v_zmove file indent_ouput1.txt
+fix             5 all ave/time 1 500 500 f_3 f_3[1] f_3[2] f_3[3] v_zmove file indent_ouput2.txt
+fix             6 all ave/time 1 1000 1000 f_3 f_3[1] f_3[2] f_3[3] v_zmove file indent_ouput3.txt
+fix             7 all ave/time 1 2000 2000 f_3 f_3[1] f_3[2] f_3[3] v_zmove file indent_ouput4.txt
+fix             8 all ave/time 1 4000 4000 f_3 f_3[1] f_3[2] f_3[3] v_zmove file indent_ouput5.txt
+run             1000000
+
+#keep loading
+#variable        zmove equal 85
+#run             20000
+
+#6 Unloading
+variable        zmove equal "85 + v_rate*elaplong*dt"
+run             1000000

@@ -1,0 +1,66 @@
+variable        simname index HKUST-1_3x3x3_full
+log             log.${simname}.txt
+units           real
+atom_style      full
+variable        T   equal   300 #the temperature is set as 300K
+boundary        p p p
+variable        dt equal 0.25
+timestep        ${dt} #0.25fs
+atom_style      charge
+
+
+box tilt        large
+
+read_data       ${simname}.data
+
+pair_style      reax/c NULL checkqeq yes safezone 1.6  mincap 100 
+pair_coeff      * * CuBTC.ff C Cu H O
+neigh_modify    every 1 delay 0 check yes    
+fix             1 all qeq/reax 1 0.0 10.0 1.0e-6 reax/c
+ 
+# ------------------------- SETTINGS ---------------------------------
+variable pdamp equal 1000*${dt}
+variable tdamp equal 100000*${dt}
+
+
+thermo          1000 
+variable    pxx1 equal pxx*1.01325*0.0001 
+variable    pyy1 equal pyy*1.01325*0.0001
+variable    pzz1 equal pzz*1.01325*0.0001
+variable    press1 equal press*1.01325*0.0001
+variable    volume equal vol
+variable    energy equal etotal
+variable    epair  equal epair
+variable    ebond  equal ebond
+variable    eangle equal eangle
+variable    edihed equal edihed
+variable    eimp   equal eimp
+variable    temp   equal temp
+thermo_style    custom step  temp vol v_press1  v_pxx1 v_pyy1 v_pzz1 pxy pyz pxz etotal
+dump 1 all custom 2000 ${simname}.lammpstrj id type x y z 
+
+
+######################################
+# RELAXATION
+reset_timestep 0
+min_style       cg
+minimize        1.0e-4  1.0e-8  10000   10000
+reset_timestep 0
+variable    ndelta  equal 1
+variable    nevery  equal 10
+variable    nrepeat equal 1
+variable    nfreq equal ${nevery}*${nrepeat}
+
+
+
+fix     2   all ave/time ${nevery} ${nrepeat} ${nfreq} v_press1 v_volume v_temp v_energy v_ebond v_eangle v_edihed v_eimp v_epair file pit_output.data
+
+velocity        all create ${T} 12345 mom yes rot no 
+fix     NPT2 all npt temp ${T} ${T} ${tdamp} tri 0 5000 ${pdamp} 
+
+run     2000000  #500ps
+unfix       NPT2
+fix     NPT3 all npt temp ${T} ${T} ${tdamp} tri 5000 0 ${pdamp} 
+run     2000000 #500ps
+unfix       NPT3
+
